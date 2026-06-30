@@ -3,7 +3,9 @@
 Tracks the status of your HackerOne reports and notifies you **only when something changes**
 (`substate` change, new internal activity, or new public activity).
 
-Uses your **already logged-in HackerOne session** in the browser — no cookies to paste.
+Tracks **internal activity**
+
+Uses your **already logged-in HackerOne session** in the browser, no cookies to paste.
 
 ## Installation
 
