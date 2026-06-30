@@ -1,0 +1,11 @@
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+
+# Local notes that might reference real reports — never publish
+NOTES.md
+notes.md
+scratch/
+*.local

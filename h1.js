@@ -1,0 +1,38 @@
+// Shared display helpers (used by both popup and background).
+// The actual GraphQL fetch lives in background.js as pageFetchReports(),
+// which runs inside a hackerone.com tab (same origin).
+
+// Calendar-day difference (local), matching the UI "N days ago" display.
+export function daysAgo(iso) {
+  if (!iso) return null;
+  const then = new Date(iso);
+  if (isNaN(then.getTime())) return null;
+  const now = new Date();
+  const a = Date.UTC(then.getFullYear(), then.getMonth(), then.getDate());
+  const b = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((b - a) / 86400000);
+}
+
+export function relLabel(iso) {
+  const d = daysAgo(iso);
+  if (d === null) return "—";
+  if (d <= 0) return "today";
+  if (d === 1) return "yesterday (1d)";
+  return d + " days ago";
+}
+
+// Human-readable substate label.
+export function substateLabel(s) {
+  const map = {
+    "new": "New",
+    "pending-program-review": "Pending program review",
+    "triaged": "Triaged",
+    "needs-more-info": "Needs more info",
+    "resolved": "Resolved",
+    "informative": "Informative",
+    "not-applicable": "Not applicable",
+    "duplicate": "Duplicate",
+    "spam": "Spam"
+  };
+  return map[s] || s;
+}
