@@ -71,7 +71,8 @@ Click the toolbar icon to open the list. Each card shows:
 
 Controls:
 
-- **Sort** by newest, oldest, last activity, last internal, status, or report number.
+- **Sort** by last internal activity (the default), newest, oldest, last public activity,
+  status, or report number.
 - **Filter chips** to show only certain substates (for example only Pending program review).
 - Cards that changed since the last check are highlighted, and a **CHANGED** badge is shown.
 - Clicking a card opens that report.

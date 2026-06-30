@@ -18,7 +18,7 @@ const ORDER = [
 
 // Selected substates. Empty set = show all.
 let selected = new Set();
-let sortBy = "submitted_desc";
+let sortBy = "internal_desc";
 let currentReports = [];
 let lastChangedIds = new Set();
 
@@ -165,7 +165,7 @@ sortEl.addEventListener("change", async () => {
 (async () => {
   const store = await chrome.storage.local.get([FILTER_KEY, SORT_KEY, "lastCheck"]);
   selected = new Set(store[FILTER_KEY] || []);
-  sortBy = store[SORT_KEY] || "submitted_desc";
+  sortBy = store[SORT_KEY] || "internal_desc";
   sortEl.value = sortBy;
   const stale = !store.lastCheck || (Date.now() - store.lastCheck > 5 * 60 * 1000);
   await load(stale);
