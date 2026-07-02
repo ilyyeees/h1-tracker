@@ -101,6 +101,40 @@
     <div id="list" class="list"></div>
   </section>
 
+  <section class="panel export-panel">
+    <div class="panel-title">
+      <span class="panel-head">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Export reports
+      </span>
+      <span id="exportMeta"></span>
+    </div>
+    <div class="export-controls">
+      <div class="select-wrap">
+        <select id="exportFormat" title="Export format">
+          <option value="markdown">Markdown (readable)</option>
+          <option value="json">JSON (full data)</option>
+        </select>
+        <svg class="chevron" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <button id="exportAll" class="btn-ghost">Download all</button>
+      <button id="selectToggle" class="btn-ghost">Select reports</button>
+      <button id="selectAll" class="btn-ghost" hidden>Select all</button>
+      <button id="exportSelected" class="btn-ghost" hidden disabled>Download selected</button>
+    </div>
+    <div class="export-hint">
+      Pulls the report body, the full comment timeline from every party, bounties, severity,
+      and metadata live via your HackerOne session. Downloads as a single file.
+    </div>
+    <div id="exportStatus" class="export-status"></div>
+  </section>
+
   <section class="panel history-panel">
     <div class="panel-title">
       <span class="panel-head">

@@ -19,6 +19,12 @@ const clearDataBtn = $("#clearData");
 const statReportsEl = $("#statReports");
 const statPprEl = $("#statPpr");
 const statChangedEl = $("#statChanged");
+const exportFormatEl = $("#exportFormat");
+const exportAllBtn = $("#exportAll");
+const selectToggleBtn = $("#selectToggle");
+const selectAllBtn = $("#selectAll");
+const exportSelectedBtn = $("#exportSelected");
+const exportStatusEl = $("#exportStatus");
 
 // HackerOne-aligned accent colors for the report accent bar.
 const CHANGED_BAR = "#fb896a"; // coral, mirrors H1 severity/attention
@@ -51,6 +57,9 @@ let sortBy = "internal_desc";
 let currentReports = [];
 let currentHistory = [];
 let lastChangedIds = new Set();
+let selectionMode = false;
+let exportBusy = false;
+const exportSelected = new Set();
 
 function cmpStr(a, b) {
   return String(a || "").localeCompare(String(b || ""));
@@ -135,14 +144,21 @@ function renderList() {
       const ppr = r.substate === "pending-program-review";
       const dotColor = statusColor(r.substate);
       const barColor = changed ? CHANGED_BAR : ppr ? PPR_BAR : dotColor;
+      const pickedForExport = exportSelected.has(String(r._id));
       const card = document.createElement("button");
       card.type = "button";
-      card.className = "card" + (changed ? " changed" : ppr ? " ppr" : "");
+      card.className = "card" + (changed ? " changed" : ppr ? " ppr" : "") +
+        (selectionMode ? " selectable" : "") + (selectionMode && pickedForExport ? " selected" : "");
       card.style.setProperty("--bar", barColor);
-      card.addEventListener("click", () => openReport(r));
+      if (selectionMode) card.setAttribute("aria-pressed", pickedForExport ? "true" : "false");
+      card.addEventListener("click", () => {
+        if (selectionMode) toggleSelect(r);
+        else openReport(r);
+      });
+      const check = selectionMode ? '<span class="check" aria-hidden="true"></span>' : "";
       card.innerHTML = `
         <div class="top">
-          <span class="title">${escapeHtml(r.title || "(untitled)")}</span>
+          ${check}<span class="title">${escapeHtml(r.title || "(untitled)")}</span>
           <span class="id">#${escapeHtml(r._id)}</span>
         </div>
         <div class="sub">
@@ -164,6 +180,7 @@ function renderList() {
   statReportsEl.textContent = currentReports.length;
   statPprEl.textContent = pprCount;
   statChangedEl.textContent = lastChangedIds.size;
+  updateExportControls();
 }
 
 function renderHistory(history) {
@@ -313,6 +330,245 @@ function exportHistory() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/* ---------- full report export ---------- */
+
+function visibleReportIds() {
+  let rows = currentReports;
+  if (selected.size) rows = rows.filter(r => selected.has(r.substate));
+  return rows.map(r => String(r._id));
+}
+
+function toggleSelect(report) {
+  const id = String(report._id);
+  if (exportSelected.has(id)) exportSelected.delete(id);
+  else exportSelected.add(id);
+  renderList();
+}
+
+function updateExportControls() {
+  if (!exportSelectedBtn) return;
+  selectToggleBtn.textContent = selectionMode ? "Done" : "Select reports";
+  selectToggleBtn.classList.toggle("on", selectionMode);
+  selectAllBtn.hidden = !selectionMode;
+  exportSelectedBtn.hidden = !selectionMode;
+
+  const count = exportSelected.size;
+  exportSelectedBtn.disabled = count === 0 || exportBusy;
+  exportSelectedBtn.textContent = count ? `Download selected (${count})` : "Download selected";
+
+  const ids = visibleReportIds();
+  const allPicked = ids.length > 0 && ids.every(id => exportSelected.has(id));
+  selectAllBtn.textContent = allPicked ? "Clear all" : "Select all";
+}
+
+function setExportBusy(busy) {
+  exportBusy = busy;
+  exportAllBtn.disabled = busy;
+  selectToggleBtn.disabled = busy;
+  exportFormatEl.disabled = busy;
+  selectAllBtn.disabled = busy;
+  updateExportControls();
+}
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+}
+
+function actorName(actor) {
+  if (!actor) return "system";
+  if (actor.username) return "@" + actor.username;
+  if (actor.name) return actor.name;
+  if (actor.handle) return actor.handle;
+  return "system";
+}
+
+function humanizeActivity(typename) {
+  const raw = String(typename || "").replace(/^Activities::/, "");
+  const spaced = raw.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ").trim();
+  return spaced || "Activity";
+}
+
+function collectBounties(node) {
+  let total = 0;
+  let count = 0;
+  const edges = node && node.bounties && node.bounties.edges;
+  if (Array.isArray(edges)) {
+    for (const e of edges) {
+      const b = e && e.node;
+      if (!b) continue;
+      count++;
+      total += parseFloat(b.awarded_amount || 0) || 0;
+      total += parseFloat(b.awarded_bonus_amount || 0) || 0;
+    }
+  }
+  return { total, count };
+}
+
+function formatMoney(n) {
+  return (Math.round(n * 100) / 100).toLocaleString("en-US");
+}
+
+function reportDetailToMarkdown(d) {
+  if (!d) return "";
+  if (d.error && !d.node) {
+    return "# Report #" + escapeMdId(d.id) + "\n\n> Could not fetch: " + d.error + "\n";
+  }
+
+  const n = d.node || {};
+  const id = n._id || d.id;
+  const lines = [];
+  lines.push("# #" + id + " — " + (n.title || "(untitled)"));
+  lines.push("");
+  lines.push("- **Status:** " + substateLabel(n.substate) + (n.state ? " (" + n.state + ")" : ""));
+  if (n.url) lines.push("- **URL:** " + n.url);
+  if (n.reporter) lines.push("- **Reporter:** " + actorName(n.reporter));
+  if (n.team) {
+    const program = n.team.name || n.team.handle || "—";
+    lines.push("- **Program:** " + program + (n.team.handle ? " (" + n.team.handle + ")" : ""));
+  }
+  if (n.severity && (n.severity.rating || n.severity.score != null)) {
+    lines.push("- **Severity:** " + (n.severity.rating || "—") +
+      (n.severity.score != null ? " (" + n.severity.score + ")" : ""));
+  }
+  if (n.weakness && n.weakness.name) {
+    lines.push("- **Weakness:** " + n.weakness.name +
+      (n.weakness.external_id ? " (" + n.weakness.external_id + ")" : ""));
+  }
+  if (n.structured_scope && n.structured_scope.asset_identifier) {
+    lines.push("- **Asset:** " + n.structured_scope.asset_identifier +
+      (n.structured_scope.asset_type ? " (" + n.structured_scope.asset_type + ")" : ""));
+  }
+  lines.push("- **Submitted:** " + fmtDate(n.submitted_at || n.created_at));
+  if (n.triaged_at) lines.push("- **Triaged:** " + fmtDate(n.triaged_at));
+  if (n.closed_at) lines.push("- **Closed:** " + fmtDate(n.closed_at));
+  lines.push("- **Disclosed:** " + (n.disclosed_at ? fmtDate(n.disclosed_at) : "not disclosed"));
+  if (n.latest_public_activity_at) {
+    lines.push("- **Last public activity:** " + fmtDate(n.latest_public_activity_at));
+  }
+
+  const bounties = collectBounties(n);
+  if (bounties.count > 0 || bounties.total > 0) {
+    lines.push("- **Bounties:** $" + formatMoney(bounties.total) +
+      " across " + bounties.count + " award(s)");
+  }
+  lines.push("");
+
+  lines.push("## Report");
+  lines.push("");
+  lines.push(n.vulnerability_information ? String(n.vulnerability_information) : "_(no report body returned)_");
+  lines.push("");
+
+  const acts = (d.activities || []).slice().sort((a, b) => cmpStr(a.created_at, b.created_at));
+  lines.push("## Timeline (" + acts.length + (acts.length === 1 ? " activity)" : " activities)"));
+  if (d.activitiesError) lines.push("\n> Activity timeline unavailable: " + d.activitiesError);
+  lines.push("");
+  for (const a of acts) {
+    const kind = humanizeActivity(a.__typename);
+    const flag = a.internal ? " · internal" : "";
+    lines.push("### " + fmtDate(a.created_at) + " — " + actorName(a.actor) + " · " + kind + flag);
+    if (a.message && String(a.message).trim()) {
+      lines.push("");
+      lines.push(String(a.message));
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim() + "\n";
+}
+
+function escapeMdId(id) {
+  return String(id == null ? "" : id);
+}
+
+function buildMarkdown(details, me) {
+  const header = [
+    "# HackerOne reports export",
+    "",
+    "- **Exported:** " + fmtDate(new Date().toISOString()),
+    me && me.username ? "- **Account:** @" + me.username : null,
+    "- **Reports:** " + details.length,
+    "",
+    "---",
+    ""
+  ].filter(v => v !== null);
+  const body = details.map(reportDetailToMarkdown).join("\n---\n\n");
+  return header.join("\n") + "\n" + body;
+}
+
+function buildJson(details, me) {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    account: me && me.username ? me.username : null,
+    reportCount: details.length,
+    reports: details.map(d => ({
+      id: d.id,
+      error: d.error || null,
+      activitiesError: d.activitiesError || null,
+      report: d.node || null,
+      activities: d.activities || []
+    }))
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function downloadBlob(text, mime, filename) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function runExport(ids) {
+  if (exportBusy) return;
+  const format = exportFormatEl.value === "json" ? "json" : "markdown";
+  const scopeAll = !ids;
+  const count = scopeAll ? currentReports.length : ids.length;
+
+  if (!count) {
+    exportStatusEl.className = "export-status error";
+    exportStatusEl.textContent = scopeAll ? "No reports loaded yet." : "No reports selected.";
+    return;
+  }
+
+  setExportBusy(true);
+  exportStatusEl.className = "export-status";
+  exportStatusEl.textContent = `Fetching full details for ${count} report(s)… this can take a while.`;
+
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "exportReports", ids: ids || [] });
+    if (!resp || !resp.ok) throw new Error(resp ? resp.error : "no response");
+
+    const details = resp.details || [];
+    if (!details.length) {
+      exportStatusEl.textContent = "Nothing was returned to export.";
+      return;
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === "json") {
+      downloadBlob(buildJson(details, resp.me), "application/json", `h1-reports-${stamp}.json`);
+    } else {
+      downloadBlob(buildMarkdown(details, resp.me), "text/markdown;charset=utf-8", `h1-reports-${stamp}.md`);
+    }
+
+    const failed = details.filter(d => d.error && !d.node).length;
+    const ok = details.length - failed;
+    exportStatusEl.textContent = `Downloaded ${ok} report(s)` +
+      (failed ? `, ${failed} could not be fetched.` : ".");
+  } catch (e) {
+    exportStatusEl.className = "export-status error";
+    exportStatusEl.textContent = "Export failed: " + (e.message || e);
+  } finally {
+    setExportBusy(false);
+  }
+}
+
 refreshBtn.addEventListener("click", doCheck);
 
 sortEl.addEventListener("change", async () => {
@@ -340,6 +596,27 @@ periodEl.addEventListener("change", async () => {
 });
 
 exportHistoryBtn.addEventListener("click", exportHistory);
+
+exportAllBtn.addEventListener("click", () => runExport(null));
+
+selectToggleBtn.addEventListener("click", () => {
+  selectionMode = !selectionMode;
+  if (!selectionMode) exportSelected.clear();
+  renderList();
+});
+
+selectAllBtn.addEventListener("click", () => {
+  const ids = visibleReportIds();
+  const allPicked = ids.length > 0 && ids.every(id => exportSelected.has(id));
+  if (allPicked) ids.forEach(id => exportSelected.delete(id));
+  else ids.forEach(id => exportSelected.add(id));
+  renderList();
+});
+
+exportSelectedBtn.addEventListener("click", () => {
+  if (!exportSelected.size) return;
+  runExport([...exportSelected]);
+});
 
 clearHistoryBtn.addEventListener("click", async () => {
   const resp = await chrome.runtime.sendMessage({ type: "clearHistory" });

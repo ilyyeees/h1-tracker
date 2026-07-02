@@ -79,6 +79,10 @@ async function handleMessage(msg) {
     return {};
   }
 
+  if (msg.type === "exportReports") {
+    return exportReports(msg.ids);
+  }
+
   throw new Error("Unknown message type: " + msg.type);
 }
 
@@ -207,6 +211,157 @@ async function pageFetchReports() {
   return { me: me.me, reports, partial };
 }
 
+// ---- This function is serialized and executed in the hackerone.com page. ----
+// It fetches the full detail (body, activity timeline from every party, bounties,
+// severity, metadata) for a batch of report ids. It must be fully self-contained.
+// The HackerOne GraphQL schema varies, so every field group degrades independently:
+// a failing tier falls back to a leaner one rather than losing the whole report.
+async function pageFetchReportDetails(ids) {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (!meta || !meta.content) {
+    return { error: "Not logged in to HackerOne (no CSRF meta on page)." };
+  }
+  const csrf = meta.content;
+
+  async function gql(query, variables) {
+    let res;
+    try {
+      res = await fetch("/graphql", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf },
+        body: JSON.stringify({ query, variables })
+      });
+    } catch (e) {
+      return { __net: String((e && e.message) || e) };
+    }
+    if (!res.ok) return { __http: res.status };
+    let j;
+    try {
+      j = await res.json();
+    } catch (_e) {
+      return { __net: "invalid JSON from /graphql" };
+    }
+    if (j.errors && j.errors.length) return { __gql: j.errors.map(e => e.message).join("; ") };
+    return j.data;
+  }
+
+  const ACTOR = "actor { __typename ... on User { username name } ... on Team { handle name } }";
+  const ACT_RICH = "__typename message internal created_at " + ACTOR;
+  const ACT_LEAN = "__typename created_at " + ACTOR;
+
+  const CORE_RICH =
+    "_id title url state substate created_at submitted_at disclosed_at triaged_at closed_at " +
+    "latest_public_activity_at vulnerability_information " +
+    "reporter { username name } team { handle name } " +
+    "severity { rating score } weakness { name external_id } " +
+    "structured_scope { asset_identifier asset_type } " +
+    "bounties { edges { node { awarded_amount awarded_bonus_amount created_at } } }";
+  const CORE_MED =
+    "_id title url state substate created_at submitted_at disclosed_at triaged_at closed_at " +
+    "latest_public_activity_at vulnerability_information " +
+    "reporter { username name } team { handle name } severity { rating score }";
+  const CORE_MIN =
+    "_id title url state substate created_at submitted_at disclosed_at " +
+    "vulnerability_information reporter { username } team { handle name }";
+
+  // Two request shapes: the proven reports-connection filter (used elsewhere in this
+  // extension) and the single-report root field, in case one is unavailable.
+  function coreQuery(shape, core) {
+    if (shape === "root") return "query D($id: Int!) { report(id: $id) { " + core + " } }";
+    return "query D($id: Int!) { reports(first: 1, where: { id: { _eq: $id } }) { edges { node { " + core + " } } } }";
+  }
+  function actQuery(shape, actNode) {
+    const sel = "activities(first: 100, after: $after) { pageInfo { hasNextPage endCursor } edges { node { " + actNode + " } } }";
+    if (shape === "root") return "query A($id: Int!, $after: String) { report(id: $id) { " + sel + " } }";
+    return "query A($id: Int!, $after: String) { reports(first: 1, where: { id: { _eq: $id } }) { edges { node { " + sel + " } } } }";
+  }
+  function pickNode(shape, data) {
+    if (shape === "root") return (data && data.report) || null;
+    const conn = data && data.reports;
+    const edges = conn && conn.edges;
+    return Array.isArray(edges) && edges.length ? (edges[0].node || null) : null;
+  }
+  function errOf(data) {
+    if (data.__gql) return data.__gql;
+    if (data.__http) return "HTTP " + data.__http;
+    if (data.__net) return data.__net;
+    return null;
+  }
+
+  async function fetchOne(id) {
+    const rid = parseInt(id, 10);
+    if (!Number.isFinite(rid)) return { id: String(id), error: "invalid report id" };
+
+    let node = null;
+    let shape = null;
+    let lastErr = null;
+    const coreTiers = [CORE_RICH, CORE_MED, CORE_MIN];
+    const shapes = ["conn", "root"];
+    for (const core of coreTiers) {
+      for (const s of shapes) {
+        const data = await gql(coreQuery(s, core), { id: rid });
+        const e = errOf(data);
+        if (e) { lastErr = e; continue; }
+        const n = pickNode(s, data);
+        if (n) { node = n; shape = s; break; }
+        lastErr = "report not found or not accessible";
+      }
+      if (node) break;
+    }
+    if (!node) return { id: String(id), error: lastErr || "unavailable" };
+
+    // Activities are fetched separately so the timeline can degrade on its own.
+    const activities = [];
+    let activitiesError = null;
+    let workingActNode = null;
+    let after = null;
+
+    for (const actNode of [ACT_RICH, ACT_LEAN]) {
+      const data = await gql(actQuery(shape, actNode), { id: rid, after: null });
+      const e = errOf(data);
+      if (e) { activitiesError = e; continue; }
+      const n = pickNode(shape, data);
+      const conn = n && n.activities;
+      if (!conn || !Array.isArray(conn.edges)) { activitiesError = "no activities returned"; continue; }
+      workingActNode = actNode;
+      activitiesError = null;
+      for (const edge of conn.edges) if (edge && edge.node) activities.push(edge.node);
+      after = conn.pageInfo && conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+      break;
+    }
+
+    let guard = 0;
+    while (workingActNode && after && guard < 20) {
+      guard++;
+      const data = await gql(actQuery(shape, workingActNode), { id: rid, after });
+      if (errOf(data)) break;
+      const n = pickNode(shape, data);
+      const conn = n && n.activities;
+      if (!conn || !Array.isArray(conn.edges)) break;
+      for (const edge of conn.edges) if (edge && edge.node) activities.push(edge.node);
+      after = conn.pageInfo && conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+    }
+
+    return { id: String(id), node, activities, activitiesError: workingActNode ? null : activitiesError };
+  }
+
+  // Bounded concurrency so a large batch finishes quickly without hammering /graphql.
+  const list = Array.isArray(ids) ? ids : [];
+  const out = new Array(list.length);
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= list.length) break;
+      out[i] = await fetchOne(list[i]);
+    }
+  }
+  const pool = Math.min(5, list.length) || 0;
+  await Promise.all(Array.from({ length: pool }, worker));
+  return { details: out };
+}
+
 function waitForComplete(tabId, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -228,7 +383,10 @@ function waitForComplete(tabId, timeoutMs = 15000) {
   });
 }
 
-async function runInH1Tab() {
+// Resolve a hackerone.com tab (reusing an open one, or opening a background tab),
+// run `job(tabId)`, then close the tab only if we created it. Reused across the
+// scheduled check and the export flow so a batch can share a single tab.
+async function withH1Tab(job) {
   const tabs = await chrome.tabs.query({ url: "https://hackerone.com/*" });
   let tab = tabs.find(t => t.status === "complete") || tabs[0];
   let created = false;
@@ -240,21 +398,58 @@ async function runInH1Tab() {
 
   try {
     if (tab.status !== "complete") await waitForComplete(tab.id);
-    const [injection] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: pageFetchReports
-    });
-    const result = injection && injection.result;
-    if (!result) throw new Error("No result from HackerOne page.");
-    if (result.error) throw new Error(result.error);
+    return await job(tab.id);
+  } finally {
+    if (created) chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function execInH1(tabId, func, args) {
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func,
+    args: args || []
+  });
+  const result = injection && injection.result;
+  if (!result) throw new Error("No result from HackerOne page.");
+  if (result.error) throw new Error(result.error);
+  return result;
+}
+
+async function fetchReportsFromH1() {
+  return withH1Tab(async tabId => {
+    const result = await execInH1(tabId, pageFetchReports, []);
     return {
       me: normalizeMe(result.me),
       reports: normalizeReports(result.reports || []),
       partial: Boolean(result.partial)
     };
-  } finally {
-    if (created) chrome.tabs.remove(tab.id).catch(() => {});
+  });
+}
+
+async function exportReports(ids) {
+  const requested = Array.isArray(ids) ? ids.map(String).filter(Boolean) : [];
+  let list = requested;
+
+  if (!list.length) {
+    const stored = await chrome.storage.local.get(["reports"]);
+    const all = Array.isArray(stored.reports) ? stored.reports : [];
+    list = all.map(r => r && r._id).filter(Boolean).map(String);
   }
+  if (!list.length) throw new Error("No reports available to export. Refresh first, then try again.");
+
+  const CHUNK = 20;
+  const details = [];
+  await withH1Tab(async tabId => {
+    for (let i = 0; i < list.length; i += CHUNK) {
+      const chunk = list.slice(i, i + CHUNK);
+      const result = await execInH1(tabId, pageFetchReportDetails, [chunk]);
+      if (result && Array.isArray(result.details)) details.push(...result.details);
+    }
+  });
+
+  const stored = await chrome.storage.local.get(["me"]);
+  return { details, me: stored.me || null, requested: list.length };
 }
 
 function normalizeMe(me) {
@@ -390,7 +585,7 @@ export async function check(options = {}) {
   }
 
   try {
-    const { me, reports, partial } = await runInH1Tab();
+    const { me, reports, partial } = await fetchReportsFromH1();
     const snap = snapshotOf(reports);
     const now = Date.now();
 
