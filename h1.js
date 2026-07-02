@@ -1,8 +1,5 @@
-// Shared display helpers (used by both popup and background).
-// The actual GraphQL fetch lives in background.js as pageFetchReports(),
-// which runs inside a hackerone.com tab (same origin).
+// Shared display and safety helpers used by the popup and background worker.
 
-// Calendar-day difference (local), matching the UI "N days ago" display.
 export function daysAgo(iso) {
   if (!iso) return null;
   const then = new Date(iso);
@@ -15,13 +12,25 @@ export function daysAgo(iso) {
 
 export function relLabel(iso) {
   const d = daysAgo(iso);
-  if (d === null) return "—";
+  if (d === null) return "-";
   if (d <= 0) return "today";
   if (d === 1) return "yesterday (1d)";
   return d + " days ago";
 }
 
-// Human-readable substate label.
+export function timeLabel(ts) {
+  if (!ts) return "never";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "invalid date";
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 export function substateLabel(s) {
   const map = {
     "new": "New",
@@ -34,5 +43,20 @@ export function substateLabel(s) {
     "duplicate": "Duplicate",
     "spam": "Spam"
   };
-  return map[s] || s;
+  return map[s] || String(s || "Unknown");
+}
+
+export function safeReportUrl(rawUrl, id) {
+  const fallback = id
+    ? "https://hackerone.com/reports/" + encodeURIComponent(String(id))
+    : "https://hackerone.com/bugs";
+
+  try {
+    const url = new URL(rawUrl || fallback, "https://hackerone.com");
+    if (url.protocol !== "https:" || url.hostname !== "hackerone.com") return fallback;
+    if (url.pathname === "/bugs" || url.pathname.startsWith("/reports/")) return url.href;
+    return fallback;
+  } catch (_e) {
+    return fallback;
+  }
 }

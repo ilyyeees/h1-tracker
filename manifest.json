@@ -1,17 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "H1 Report Tracker",
-  "version": "1.1.0",
-  "description": "Tracks the status of my HackerOne reports and alerts when something changes.",
-  "permissions": ["storage", "alarms", "notifications", "scripting", "tabs"],
+  "name": "H1 Report Tracker Safe",
+  "version": "1.2.0",
+  "description": "Tracks HackerOne report status, internal activity, and local change history.",
+  "permissions": ["storage", "alarms", "notifications", "scripting"],
   "host_permissions": ["https://hackerone.com/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none';"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "H1 Report Tracker",
+    "default_title": "H1 Report Tracker Safe",
     "default_icon": {
       "16": "icon16.png",
       "48": "icon48.png",

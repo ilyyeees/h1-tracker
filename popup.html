@@ -6,9 +6,12 @@
 </head>
 <body>
   <header>
-    <span id="user" class="user">…</span>
+    <div>
+      <span id="user" class="user">...</span>
+      <span id="status" class="status">Loading...</span>
+    </div>
     <div class="controls">
-      <select id="sort" title="Sort by">
+      <select id="sort" title="Sort reports by">
         <option value="internal_desc">Last internal activity</option>
         <option value="submitted_desc">Newest</option>
         <option value="submitted_asc">Oldest</option>
@@ -16,15 +19,45 @@
         <option value="status">Status</option>
         <option value="id_desc">Report #</option>
       </select>
-      <button id="refresh" title="Refresh">↻</button>
+      <button id="refresh" title="Refresh now">Refresh</button>
     </div>
   </header>
-  <div id="filters" class="filters"></div>
-  <div id="status" class="status"></div>
-  <div id="list" class="list"></div>
-  <footer>
-    <span id="meta"></span>
-  </footer>
+
+  <section class="settings">
+    <label class="toggle">
+      <input id="paused" type="checkbox" />
+      Pause automatic checks
+    </label>
+    <label class="period">
+      Check every
+      <input id="period" type="number" min="15" max="1440" step="5" />
+      min
+    </label>
+    <span id="settingsStatus"></span>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">
+      <span>Reports</span>
+      <span id="meta"></span>
+    </div>
+    <div id="filters" class="filters"></div>
+    <div id="list" class="list"></div>
+  </section>
+
+  <section class="panel history-panel">
+    <div class="panel-title">
+      <span>Change history</span>
+      <span id="historyCount"></span>
+    </div>
+    <div class="history-actions">
+      <button id="exportHistory">Export JSON</button>
+      <button id="clearHistory">Clear history</button>
+      <button id="clearData" class="danger">Clear all local data</button>
+    </div>
+    <div id="history" class="history"></div>
+  </section>
+
   <script type="module" src="popup.js"></script>
 </body>
 </html>
