@@ -20,22 +20,23 @@ const statReportsEl = $("#statReports");
 const statPprEl = $("#statPpr");
 const statChangedEl = $("#statChanged");
 
-const DANGER = "#ef5b5b";
-const WARN = "#f0b429";
+// HackerOne-aligned accent colors for the report accent bar.
+const CHANGED_BAR = "#fb896a"; // coral, mirrors H1 severity/attention
+const PPR_BAR = "#f28ccd";     // pink, mirrors H1 counts/active state
 const SUBSTATE_COLOR = {
-  "new": "#74b4ff",
-  "pending-program-review": "#f0b429",
-  "triaged": "#34e39b",
-  "needs-more-info": "#b48bff",
-  "resolved": "#35c76a",
-  "informative": "#4fd1c5",
-  "not-applicable": "#8a97a3",
-  "duplicate": "#7f8fa3",
-  "spam": "#ef5b5b"
+  "new": "#86a3f9",
+  "pending-program-review": "#f28ccd",
+  "triaged": "#67e4cb",
+  "needs-more-info": "#b98be0",
+  "resolved": "#57d9a3",
+  "informative": "#5ec9e0",
+  "not-applicable": "#9aa3bd",
+  "duplicate": "#8089ab",
+  "spam": "#fb896a"
 };
 
 function statusColor(s) {
-  return SUBSTATE_COLOR[s] || "#55606b";
+  return SUBSTATE_COLOR[s] || "#67707f";
 }
 
 const FILTER_KEY = "filterSubstates";
@@ -133,7 +134,7 @@ function renderList() {
       const changed = lastChangedIds.has(String(r._id));
       const ppr = r.substate === "pending-program-review";
       const dotColor = statusColor(r.substate);
-      const barColor = changed ? DANGER : ppr ? WARN : dotColor;
+      const barColor = changed ? CHANGED_BAR : ppr ? PPR_BAR : dotColor;
       const card = document.createElement("button");
       card.type = "button";
       card.className = "card" + (changed ? " changed" : ppr ? " ppr" : "");
