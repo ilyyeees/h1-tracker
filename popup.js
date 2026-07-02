@@ -16,6 +16,27 @@ const historyCountEl = $("#historyCount");
 const exportHistoryBtn = $("#exportHistory");
 const clearHistoryBtn = $("#clearHistory");
 const clearDataBtn = $("#clearData");
+const statReportsEl = $("#statReports");
+const statPprEl = $("#statPpr");
+const statChangedEl = $("#statChanged");
+
+const DANGER = "#ef5b5b";
+const WARN = "#f0b429";
+const SUBSTATE_COLOR = {
+  "new": "#74b4ff",
+  "pending-program-review": "#f0b429",
+  "triaged": "#34e39b",
+  "needs-more-info": "#b48bff",
+  "resolved": "#35c76a",
+  "informative": "#4fd1c5",
+  "not-applicable": "#8a97a3",
+  "duplicate": "#7f8fa3",
+  "spam": "#ef5b5b"
+};
+
+function statusColor(s) {
+  return SUBSTATE_COLOR[s] || "#55606b";
+}
 
 const FILTER_KEY = "filterSubstates";
 const SORT_KEY = "sortBy";
@@ -111,18 +132,25 @@ function renderList() {
     for (const r of rows) {
       const changed = lastChangedIds.has(String(r._id));
       const ppr = r.substate === "pending-program-review";
+      const dotColor = statusColor(r.substate);
+      const barColor = changed ? DANGER : ppr ? WARN : dotColor;
       const card = document.createElement("button");
       card.type = "button";
       card.className = "card" + (changed ? " changed" : ppr ? " ppr" : "");
+      card.style.setProperty("--bar", barColor);
       card.addEventListener("click", () => openReport(r));
       card.innerHTML = `
         <div class="top">
           <span class="title">${escapeHtml(r.title || "(untitled)")}</span>
           <span class="id">#${escapeHtml(r._id)}</span>
         </div>
-        <div class="sub">${escapeHtml(substateLabel(r.substate))}${changed ? ' <span class="badge-changed">CHANGED</span>' : ""}</div>
+        <div class="sub">
+          <span class="dot" style="background:${dotColor}"></span>
+          <span>${escapeHtml(substateLabel(r.substate))}</span>
+          ${changed ? '<span class="badge-changed">CHANGED</span>' : ""}
+        </div>
         <div class="meta-line">
-          <span>activity: ${escapeHtml(relLabel(r.latest_activity_at))}</span>
+          <span>public: ${escapeHtml(relLabel(r.latest_activity_at))}</span>
           <span>internal: ${escapeHtml(relLabel(r.report_pending_party_last_activity))}</span>
         </div>`;
       listEl.appendChild(card);
@@ -131,7 +159,10 @@ function renderList() {
 
   const shown = selected.size ? rows.length : currentReports.length;
   const pprCount = currentReports.filter(r => r.substate === "pending-program-review").length;
-  metaEl.textContent = `${shown}/${currentReports.length} shown, ${pprCount} in PPR`;
+  metaEl.textContent = `${shown} of ${currentReports.length} shown`;
+  statReportsEl.textContent = currentReports.length;
+  statPprEl.textContent = pprCount;
+  statChangedEl.textContent = lastChangedIds.size;
 }
 
 function renderHistory(history) {

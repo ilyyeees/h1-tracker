@@ -6,39 +6,95 @@
 </head>
 <body>
   <header>
-    <div>
-      <span id="user" class="user">...</span>
-      <span id="status" class="status">Loading...</span>
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="30" height="30">
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#42e9a1" />
+              <stop offset="0.55" stop-color="#18c58e" />
+              <stop offset="1" stop-color="#0aa8a5" />
+            </linearGradient>
+          </defs>
+          <rect x="3" y="3" width="42" height="42" rx="12" fill="url(#lg)" />
+          <path d="M13 16 v16 M13 24 h9 M22 16 v16" fill="none" stroke="#08201b"
+                stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M29 20 l3.5 -2.5 v14.5 M28.5 34.5 h8" fill="none" stroke="#08201b"
+                stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">H1 Tracker</span>
+        <span id="user" class="user">…</span>
+      </span>
     </div>
     <div class="controls">
-      <select id="sort" title="Sort reports by">
-        <option value="internal_desc">Last internal activity</option>
-        <option value="submitted_desc">Newest</option>
-        <option value="submitted_asc">Oldest</option>
-        <option value="activity_desc">Last public activity</option>
-        <option value="status">Status</option>
-        <option value="id_desc">Report #</option>
-      </select>
-      <button id="refresh" title="Refresh now">Refresh</button>
+      <div class="select-wrap">
+        <select id="sort" title="Sort reports by">
+          <option value="internal_desc">Last internal activity</option>
+          <option value="submitted_desc">Newest</option>
+          <option value="submitted_asc">Oldest</option>
+          <option value="activity_desc">Last public activity</option>
+          <option value="status">Status</option>
+          <option value="id_desc">Report #</option>
+        </select>
+        <svg class="chevron" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <button id="refresh" class="icon-btn" title="Refresh now" aria-label="Refresh now">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M20 11a8 8 0 10-.5 4M20 5v6h-6" fill="none" stroke="currentColor"
+                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
     </div>
   </header>
 
+  <div class="statusbar">
+    <span class="pulse" aria-hidden="true"></span>
+    <span id="status" class="status">Loading…</span>
+  </div>
+
+  <section class="stats">
+    <div class="stat">
+      <span id="statReports" class="stat-num">0</span>
+      <span class="stat-label">Reports</span>
+    </div>
+    <div class="stat">
+      <span id="statPpr" class="stat-num warn">0</span>
+      <span class="stat-label">In review</span>
+    </div>
+    <div class="stat">
+      <span id="statChanged" class="stat-num danger">0</span>
+      <span class="stat-label">Changed</span>
+    </div>
+  </section>
+
   <section class="settings">
-    <label class="toggle">
+    <label class="switch" title="Pause scheduled background checks">
       <input id="paused" type="checkbox" />
-      Pause automatic checks
+      <span class="track"><span class="thumb"></span></span>
+      <span class="switch-label">Pause auto checks</span>
     </label>
-    <label class="period">
-      Check every
+    <label class="period" title="Minutes between automatic checks">
+      <span>Every</span>
       <input id="period" type="number" min="15" max="1440" step="5" />
-      min
+      <span>min</span>
     </label>
     <span id="settingsStatus"></span>
   </section>
 
   <section class="panel">
     <div class="panel-title">
-      <span>Reports</span>
+      <span class="panel-head">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M4 5h16M4 12h16M4 19h10" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" />
+        </svg>
+        Reports
+      </span>
       <span id="meta"></span>
     </div>
     <div id="filters" class="filters"></div>
@@ -47,13 +103,19 @@
 
   <section class="panel history-panel">
     <div class="panel-title">
-      <span>Change history</span>
+      <span class="panel-head">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <path d="M12 8v4l3 2M3.5 12a8.5 8.5 0 1 0 2.2-5.7M5 3v4h4" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Change history
+      </span>
       <span id="historyCount"></span>
     </div>
     <div class="history-actions">
-      <button id="exportHistory">Export JSON</button>
-      <button id="clearHistory">Clear history</button>
-      <button id="clearData" class="danger">Clear all local data</button>
+      <button id="exportHistory" class="btn-ghost">Export JSON</button>
+      <button id="clearHistory" class="btn-ghost">Clear history</button>
+      <button id="clearData" class="btn-ghost danger">Clear all data</button>
     </div>
     <div id="history" class="history"></div>
   </section>
